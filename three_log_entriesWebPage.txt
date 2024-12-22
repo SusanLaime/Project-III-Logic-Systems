@@ -1,0 +1,95 @@
+import serial
+import threading
+import time
+
+# Initialize serial connections for both Arduino boards
+arduino_1 = serial.Serial('/dev/ttyACM0', 115200)
+arduino_2 = serial.Serial('/dev/ttyUSB0', 115200)
+
+# File paths for logs
+log_file_1 = 'logs_arduino_1.log'
+log_file_2 = 'logs_arduino_2.log'
+html_file = 'log_viewer.html'
+
+# Lock to prevent simultaneous file writing
+html_file_lock = threading.Lock()
+
+def update_html(log_data_1, log_data_2):
+    """Update the HTML file with the latest log data."""
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Log Data</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; }}
+            .log-container {{ margin: 20px; }}
+            pre {{ background: #f4f4f4; padding: 10px; border: 1px solid #ccc; }}
+            h2 {{ color: #333; }}
+        </style>
+        <script>
+            setTimeout(() => {{
+                location.reload();
+            }}, 1000);
+        </script>
+    </head>
+    <body>
+        <div class="log-container">
+            <h1>Arduino Log Data</h1>
+            <h2>Arduino 1 (ACM0)</h2>
+            <pre>{log_data_1}</pre>
+            <h2>Arduino 2 (USB0)</h2>
+            <pre>{log_data_2}</pre>
+        </div>
+    </body>
+    </html>
+    """
+    with html_file_lock:
+        with open(html_file, 'w') as file:
+            file.write(html_content)
+
+def read_serial_data(serial_device, log_file):
+    """Reads data from a serial device and writes it to the respective log file."""
+    while True:
+        try:
+            received = serial_device.readline()
+            decoded_data = received.decode('utf-8').strip()
+            with open(log_file, 'a') as f:
+                f.write(decoded_data + '\n')
+        except Exception as e:
+            print(f"Error reading from {serial_device.port}: {e}")
+
+def update_webpage():
+    """Reads log files and updates the HTML webpage every second."""
+    while True:
+        try:
+            # Read the last 3 lines from both log files
+            with open(log_file_1, 'r') as f1, open(log_file_2, 'r') as f2:
+                log_lines_1 = f1.readlines()
+                log_lines_2 = f2.readlines()
+                log_data_1 = ''.join(log_lines_1[-3:])  # Last 3 lines for Arduino 1
+                log_data_2 = ''.join(log_lines_2[-3:])  # Last 3 lines for Arduino 2
+            # Update the HTML content with the new log data
+            update_html(log_data_1, log_data_2)
+            time.sleep(1)  # Sleep for 1 second before the next update
+        except Exception as e:
+            print(f"Error updating webpage: {e}")
+
+# Threads for reading data from each Arduino
+thread_arduino_1 = threading.Thread(target=read_serial_data, args=(arduino_1, log_file_1))
+thread_arduino_2 = threading.Thread(target=read_serial_data, args=(arduino_2, log_file_2))
+thread_webpage = threading.Thread(target=update_webpage)
+
+# Start the threads
+thread_arduino_1.start()
+thread_arduino_2.start()
+thread_webpage.start()
+
+# Keep the main program running
+thread_arduino_1.join()
+thread_arduino_2.join()
+thread_webpage.join()
+
+
